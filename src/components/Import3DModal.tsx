@@ -79,40 +79,45 @@ export const Import3DModal: React.FC<Import3DModalProps> = ({
         const loader = new OBJLoader();
         const group = loader.parse(text);
 
-        group.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            const mesh = child as THREE.Mesh;
-            const geom = mesh.geometry;
-            if (geom.attributes.position) {
-              verticesCount += geom.attributes.position.count;
-              polygonsCount += geom.index ? geom.index.count / 3 : geom.attributes.position.count / 3;
-            }
-          }
-        });
-
-        // Compute Bounding Box
         const bbox = new THREE.Box3().setFromObject(group);
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
         const size = new THREE.Vector3();
         bbox.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z) || 1;
+        const normScale = 3.5 / maxDim;
+
         bboxDimensions = [parseFloat(size.x.toFixed(2)), parseFloat(size.y.toFixed(2)), parseFloat(size.z.toFixed(2))];
 
-        // Convert obj group meshes into Carbon 3D parts
         let index = 1;
         group.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             const m = child as THREE.Mesh;
+            const geom = m.geometry.clone();
+            geom.computeVertexNormals();
+            if (geom.attributes.position) {
+              verticesCount += geom.attributes.position.count;
+              polygonsCount += geom.index ? geom.index.count / 3 : geom.attributes.position.count / 3;
+            }
+            const relPos: [number, number, number] = [
+              (m.position.x - center.x) * normScale,
+              (m.position.y - center.y) * normScale + (size.y * normScale) / 2,
+              (m.position.z - center.z) * normScale,
+            ];
+
             createdParts.push({
               id: `imported-obj-${index}`,
-              name: m.name || `Imported Mesh Element ${index}`,
-              shape: 'box', // Base bounds
-              position: [m.position.x, m.position.y, m.position.z],
+              name: m.name || `OBJ Mesh Component ${index}`,
+              shape: 'custom_mesh',
+              position: relPos,
               rotation: [m.rotation.x, m.rotation.y, m.rotation.z],
-              scale: [m.scale.x || 1, m.scale.y || 1, m.scale.z || 1],
-              color: '#1a1c24',
+              scale: [normScale, normScale, normScale],
+              color: index % 2 === 0 ? '#00FF66' : '#1a1c24',
               metalness: 0.9,
               roughness: 0.2,
-              emissive: '#00FF66',
-              emissiveIntensity: 0.3,
+              emissive: index % 2 === 0 ? '#00FF66' : '#0a0d0c',
+              emissiveIntensity: index % 2 === 0 ? 0.4 : 0.1,
+              customGeometry: geom,
             });
             index++;
           }
@@ -120,27 +125,34 @@ export const Import3DModal: React.FC<Import3DModalProps> = ({
       } else if (ext === '.stl') {
         const loader = new STLLoader();
         const geometry = loader.parse(arrayBuffer);
-        geometry.computeBoundingBox();
+        geometry.computeVertexNormals();
+        geometry.center();
 
         verticesCount = geometry.attributes.position ? geometry.attributes.position.count : 0;
         polygonsCount = geometry.index ? geometry.index.count / 3 : verticesCount / 3;
 
+        geometry.computeBoundingBox();
         const size = new THREE.Vector3();
         geometry.boundingBox?.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z) || 1;
+        const normScale = 3.5 / maxDim;
+        geometry.scale(normScale, normScale, normScale);
+
         bboxDimensions = [parseFloat(size.x.toFixed(2)), parseFloat(size.y.toFixed(2)), parseFloat(size.z.toFixed(2))];
 
         createdParts.push({
           id: `imported-stl-1`,
           name: file.name.replace(/\.[^/.]+$/, ''),
-          shape: 'box',
-          position: [0, 0, 0],
+          shape: 'custom_mesh',
+          position: [0, (size.y * normScale) / 2, 0],
           rotation: [0, 0, 0],
           scale: [1, 1, 1],
           color: '#181a22',
           metalness: 0.95,
           roughness: 0.15,
           emissive: '#00FF66',
-          emissiveIntensity: 0.4,
+          emissiveIntensity: 0.35,
+          customGeometry: geometry,
         });
       } else if (ext === '.gltf' || ext === '.glb') {
         const loader = new GLTFLoader();
@@ -148,36 +160,44 @@ export const Import3DModal: React.FC<Import3DModalProps> = ({
           loader.parse(arrayBuffer, '', resolve, reject);
         });
 
-        gltf.scene.traverse((child: any) => {
-          if (child.isMesh) {
-            const geom = child.geometry;
-            if (geom && geom.attributes.position) {
-              verticesCount += geom.attributes.position.count;
-              polygonsCount += geom.index ? geom.index.count / 3 : geom.attributes.position.count / 3;
-            }
-          }
-        });
-
         const bbox = new THREE.Box3().setFromObject(gltf.scene);
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
         const size = new THREE.Vector3();
         bbox.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z) || 1;
+        const normScale = 3.5 / maxDim;
+
         bboxDimensions = [parseFloat(size.x.toFixed(2)), parseFloat(size.y.toFixed(2)), parseFloat(size.z.toFixed(2))];
 
         let index = 1;
         gltf.scene.traverse((child: any) => {
           if (child.isMesh) {
+            const geom = child.geometry.clone();
+            geom.computeVertexNormals();
+            if (geom.attributes.position) {
+              verticesCount += geom.attributes.position.count;
+              polygonsCount += geom.index ? geom.index.count / 3 : geom.attributes.position.count / 3;
+            }
+            const relPos: [number, number, number] = [
+              (child.position.x - center.x) * normScale,
+              (child.position.y - center.y) * normScale + (size.y * normScale) / 2,
+              (child.position.z - center.z) * normScale,
+            ];
+
             createdParts.push({
               id: `imported-gltf-${index}`,
-              name: child.name || `GLTF Mesh ${index}`,
-              shape: 'box',
-              position: [child.position.x, child.position.y, child.position.z],
+              name: child.name || `GLTF Mesh Component ${index}`,
+              shape: 'custom_mesh',
+              position: relPos,
               rotation: [child.rotation.x, child.rotation.y, child.rotation.z],
-              scale: [child.scale.x || 1, child.scale.y || 1, child.scale.z || 1],
-              color: '#121317',
+              scale: [normScale, normScale, normScale],
+              color: index === 1 ? '#121317' : '#00FF66',
               metalness: 0.85,
               roughness: 0.2,
               emissive: '#00FF66',
-              emissiveIntensity: 0.5,
+              emissiveIntensity: 0.4,
+              customGeometry: geom,
             });
             index++;
           }
@@ -185,27 +205,34 @@ export const Import3DModal: React.FC<Import3DModalProps> = ({
       } else if (ext === '.ply') {
         const loader = new PLYLoader();
         const geometry = loader.parse(arrayBuffer);
-        geometry.computeBoundingBox();
+        geometry.computeVertexNormals();
+        geometry.center();
 
         verticesCount = geometry.attributes.position ? geometry.attributes.position.count : 0;
         polygonsCount = geometry.index ? geometry.index.count / 3 : verticesCount / 3;
 
+        geometry.computeBoundingBox();
         const size = new THREE.Vector3();
         geometry.boundingBox?.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z) || 1;
+        const normScale = 3.5 / maxDim;
+        geometry.scale(normScale, normScale, normScale);
+
         bboxDimensions = [parseFloat(size.x.toFixed(2)), parseFloat(size.y.toFixed(2)), parseFloat(size.z.toFixed(2))];
 
         createdParts.push({
           id: `imported-ply-1`,
           name: file.name.replace(/\.[^/.]+$/, ''),
-          shape: 'sphere',
-          position: [0, 0, 0],
+          shape: 'custom_mesh',
+          position: [0, (size.y * normScale) / 2, 0],
           rotation: [0, 0, 0],
           scale: [1, 1, 1],
           color: '#101216',
           metalness: 0.9,
           roughness: 0.1,
           emissive: '#00FF66',
-          emissiveIntensity: 0.6,
+          emissiveIntensity: 0.5,
+          customGeometry: geometry,
         });
       } else if (ext === '.json') {
         const text = new TextDecoder().decode(arrayBuffer);

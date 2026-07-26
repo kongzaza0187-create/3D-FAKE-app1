@@ -8,7 +8,8 @@ export type ShapeType =
   | 'icosahedron'
   | 'ring'
   | 'octahedron'
-  | 'capsule';
+  | 'capsule'
+  | 'custom_mesh';
 
 export type MaterialType = 'standard' | 'physical' | 'wireframe' | 'carbon' | 'glass' | 'emissive';
 
@@ -30,6 +31,7 @@ export interface Part3D {
   rotationSpeed?: [number, number, number];
   floatSpeed?: number;
   floatAmplitude?: number;
+  customGeometry?: any; // THREE.BufferGeometry
 }
 
 export interface LightingConfig {

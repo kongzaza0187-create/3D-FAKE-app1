@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Model3DSpec } from './types';
 import { PRESET_MODELS } from './data/presets';
 import { Viewport3D } from './components/Viewport3D';
@@ -8,6 +8,8 @@ import { AIChatDrawer } from './components/AIChatDrawer';
 import { StudioSettings } from './components/StudioSettings';
 import { ExportModal } from './components/ExportModal';
 import { Import3DModal } from './components/Import3DModal';
+import { generateProcedural3DModel } from './utils/proceduralGenerator';
+import { SecurityModal } from './components/SecurityModal';
 import {
   Sparkles,
   Sliders,
@@ -20,6 +22,8 @@ import {
   RefreshCw,
   Zap,
   Upload,
+  ShieldCheck,
+  Lock,
 } from 'lucide-react';
 
 export default function App() {
@@ -33,6 +37,68 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [isImportOpen, setIsImportOpen] = useState<boolean>(false);
+  const [isSecurityOpen, setIsSecurityOpen] = useState<boolean>(false);
+  const [securityAlertMsg, setSecurityAlertMsg] = useState<string | null>(null);
+
+  // Cybersecurity: Block Right-Click and Developer Tools Key Combinations
+  useEffect(() => {
+    const showSecurityWarning = (msg: string) => {
+      setSecurityAlertMsg(msg);
+      setTimeout(() => {
+        setSecurityAlertMsg(null);
+      }, 3000);
+    };
+
+    // Prevent Right-Click Context Menu
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      showSecurityWarning('ห้ามคลิกขวา! ระบบเปิดการป้องกัน Security Mode');
+    };
+
+    // Prevent DevTools Shortcuts (F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U, Ctrl+S)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
+
+      // F12
+      if (e.key === 'F12') {
+        e.preventDefault();
+        showSecurityWarning('ห้ามเปิด Developer Tools (F12 Blocked)');
+        return;
+      }
+
+      if (ctrlOrCmd) {
+        // Ctrl+Shift+I (DevTools), Ctrl+Shift+J (Console), Ctrl+Shift+C (Inspect)
+        if (e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c')) {
+          e.preventDefault();
+          showSecurityWarning('ห้ามใช้ Developer Tools / Inspect Element');
+          return;
+        }
+
+        // Ctrl+U (View Source)
+        if (e.key === 'U' || e.key === 'u') {
+          e.preventDefault();
+          showSecurityWarning('ห้ามเข้าดู View Source Code (Ctrl+U Blocked)');
+          return;
+        }
+
+        // Ctrl+S (Save Page)
+        if (e.key === 'S' || e.key === 's') {
+          e.preventDefault();
+          showSecurityWarning('ห้ามบันทึกซอร์สโค้ดหน้าเว็บ (Ctrl+S Blocked)');
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   // Exporter Ref
   const exportRef = useRef<{
@@ -42,7 +108,7 @@ export default function App() {
     capturePNG: () => string | null;
   } | null>(null);
 
-  // Generate 3D Model via Gemini AI
+  // Generate 3D Model via Gemini AI / Search Bar
   const handleGenerateModel = async (prompt: string, category: string) => {
     setIsLoading(true);
     try {
@@ -52,18 +118,20 @@ export default function App() {
         body: JSON.stringify({ prompt, category }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to generate 3D model with Gemini API');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.model) {
+          setCurrentModel(data.model);
+          setSelectedPartId(null);
+          return;
+        }
       }
-
-      const data = await response.json();
-      if (data.model) {
-        setCurrentModel(data.model);
-        setSelectedPartId(null);
-      }
+      throw new Error('API unaccessible, using procedural fallback');
     } catch (error: any) {
-      console.error(error);
-      alert(`Error generating model: ${error.message}`);
+      console.warn('Using client-side procedural 3D model generator fallback:', error);
+      const fallbackModel = generateProcedural3DModel(prompt, category);
+      setCurrentModel(fallbackModel);
+      setSelectedPartId(null);
     } finally {
       setIsLoading(false);
     }
@@ -121,6 +189,16 @@ export default function App() {
 
         {/* Header Action Buttons */}
         <div className="flex items-center gap-2">
+          {/* Cyber Security Shield Button */}
+          <button
+            onClick={() => setIsSecurityOpen(true)}
+            className="bg-[#00FF66]/10 hover:bg-[#00FF66]/20 border border-[#00FF66]/40 text-[#00FF66] font-semibold text-xs px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+            title="Cyber Security System Status"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-[#00FF66]" />
+            <span className="hidden md:inline font-mono font-bold text-[11px]">SECURITY SECURE</span>
+          </button>
+
           {/* Import 3D File Button */}
           <button
             onClick={() => setIsImportOpen(true)}
@@ -244,6 +322,12 @@ export default function App() {
         onExportCurrent={handleExportFormat}
       />
 
+      {/* Security System Modal */}
+      <SecurityModal
+        isOpen={isSecurityOpen}
+        onClose={() => setIsSecurityOpen(false)}
+      />
+
       {/* Export Modal */}
       <ExportModal
         model={currentModel}
@@ -254,6 +338,19 @@ export default function App() {
         onExportSTL={() => exportRef.current?.exportSTL()}
         onCapturePNG={() => exportRef.current?.capturePNG() || null}
       />
+
+      {/* Floating Security Alert Toast */}
+      {securityAlertMsg && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#121317]/95 border border-[#00FF66]/60 text-white px-5 py-3 rounded-2xl shadow-2xl shadow-[#00FF66]/20 backdrop-blur-md flex items-center gap-3 animate-bounce">
+          <div className="w-8 h-8 rounded-xl bg-[#00FF66]/20 border border-[#00FF66]/50 flex items-center justify-center shrink-0">
+            <Lock className="w-4 h-4 text-[#00FF66]" />
+          </div>
+          <div>
+            <div className="font-bold text-xs text-[#00FF66] tracking-wide">CYBER SECURITY PROTECTION</div>
+            <div className="text-xs text-gray-200">{securityAlertMsg}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

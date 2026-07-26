@@ -264,7 +264,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
 
     // Build new meshes
     model.parts.forEach((part: Part3D) => {
-      const geometry = createGeometry(part.shape);
+      const geometry = part.customGeometry ? part.customGeometry : createGeometry(part.shape);
 
       const material = new THREE.MeshStandardMaterial({
         color: new THREE.Color(part.color),
